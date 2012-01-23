@@ -1,5 +1,9 @@
 package org.drools;
 
+declare LegacyBean
+    
+end
+
 
 declare BetterLegacy extends LegacyBean
     // novel field
@@ -14,11 +18,11 @@ declare BetterLegacy extends LegacyBean
 end
 
 
-
+/* //According to documentation, we can not add fields in the definition of an existing type
 declare LegacyBean
     objField : Object                       @position(2)  // tag existing field, will be 2nd field
 end
-
+*/
 
 
 /*

@@ -1235,7 +1235,7 @@ public class MiscTest extends CommonTestMethodBase {
 
     }
     
-    @Test
+    @Ignore("Address is a pre-existing Fact Type (a POJO in the classpath), so we can't define fields here")
     public void testUppercaseField() throws Exception {
         String rule = "package org.drools;\n";
         rule += "global java.util.List list\n";

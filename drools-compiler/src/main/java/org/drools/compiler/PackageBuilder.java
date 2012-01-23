@@ -2092,6 +2092,10 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
                 typeDescr.getAnnotationNames().contains(TypeDeclaration.ATTR_NOT_PROP_SPECIFIC));
         type.setPropertySpecific( propertySpecific );
 
+	//Merge the Type declaration with any pre-existing declaration
+        TypeDeclaration existingTypeDeclaration = pkgRegistry.getPackage().getTypeDeclaration(type.getTypeName());
+        this.mergeTypeDeclarations(existingTypeDeclaration, type);
+
         pkgRegistry.getPackage().addTypeDeclaration( type );
         return true;
     }
@@ -2146,13 +2150,12 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
                 //                                       ? typeDescr.getNamespace() + "." + typeDescr.getTypeName()
                 //                                       : typeDescr.getTypeName();
                 String availableName = typeDescr.getType().getFullName();
-                Class<?> resolvedType = reg.getTypeResolver().resolveType( availableName );
-                if (resolvedType != null && typeDescr.getFields().size() > 1) {
-                    this.results.add( new TypeDeclarationError( typeDescr,
-                                                                "Duplicate type definition. A class with the name '" + resolvedType.getName() +
-                                                                "' was found in the classpath while trying to " +
-                                                                "redefine the fields in the declare statement. Fields can only be defined for non-existing classes." ) );
-                }
+                Class< ? > resolvedType = reg.getTypeResolver().resolveType( availableName );
+//                if ( resolvedType != null && typeDescr.getFields().size() > 0 ) {
+//                    this.results.add( new TypeDeclarationError( "Duplicate type definition. A class with the name '" + resolvedType.getName() + "' was found in the classpath while trying to " +
+//                                                                        "redefine the fields in the declare statement. Fields can only be defined for non-existing classes.",
+//                                                                typeDescr.getLine() ) );
+//                }
                 return false;
             } else {
                 return false;
@@ -2330,6 +2333,47 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
         // attach the class definition, it will be completed later
         type.setTypeClassDef( def );
 
+        //if is not new, search the already existing declaration and 
+        //compare them o see if they are at least compatibles
+        if (!type.isNovel()){
+            TypeDeclaration oldTypeDeclaration = this.pkgRegistryMap.get(typeDescr.getNamespace()).getPackage().getTypeDeclaration(typeDescr.getTypeName());
+
+            try{
+                //if there is no previous declaration, then the original declaration was a POJO
+                //TODO: what should we do in this case? In the meantime I'll fallback
+                //to the behavior previous these changes
+                if (oldTypeDeclaration == null){
+                    //new declarations of a POJO can't declare new fields
+                    if (type.getTypeClassDef().getFields().size() > 0 ){
+                        this.results.add(new TypeDeclarationError("New declaration of "+typeDescr.getType().getFullName()
+                                +" can't declare new fields", typeDescr.getLine()));
+                    }
+                }else{
+
+
+                    int typeComparissonResult = this.compareTypeDeclaration(oldTypeDeclaration, type);
+
+                    if (typeComparissonResult < 0){
+                        //oldDeclaration is "less" than newDeclaration -> error
+                        this.results.add(new TypeDeclarationError(typeDescr.getType().getFullName()
+                                +" declares more fields than the already existing version", typeDescr.getLine()));
+                    }else if (typeComparissonResult > 0 && !type.getTypeClassDef().getFields().isEmpty()){
+                        //oldDeclaration is "grater" than newDeclaration -> warning
+                        this.results.add(new TypeDeclarationWarning(typeDescr.getType().getFullName()
+                                +" declares less fields than the already existing version", typeDescr.getLine()));
+                    }
+                    
+                    //if they are "equal" -> no problem
+                }
+                
+            } catch (IncompatibleClassChangeError error){
+                //if the types are incompatible -> error
+                this.results.add(new TypeDeclarationError(error.getMessage(), typeDescr.getLine()));
+            }
+            
+            
+        }
+        
         generateDeclaredBean( typeDescr,
                               type,
                               pkgRegistry,
@@ -3147,6 +3191,96 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
             if (ruleAttrDescr == null) {
                 ruleDescr.getAttributes().put( name,
                                                attrDescr );
+            }
+        }
+    }
+    
+    private int compareTypeDeclaration(TypeDeclaration oldDeclaration, TypeDeclaration newDeclaration) throws IncompatibleClassChangeError{
+        
+        //different formats -> incompatible
+        if (!oldDeclaration.getFormat().equals(newDeclaration.getFormat())){
+            throw new IncompatibleClassChangeError("Type Declaration "+newDeclaration.getTypeName()+" has a different"
+                    + " format that its previous definition: "+newDeclaration.getFormat()+"!="+oldDeclaration.getFormat());
+        }
+        
+        //TODO: further comparisson?
+        
+        //different superclasses -> Incompatible (TODO: check for hierarchy)
+        if (!oldDeclaration.getTypeClassDef().getSuperClass().equals(newDeclaration.getTypeClassDef().getSuperClass())){
+            throw new IncompatibleClassChangeError("Type Declaration "+newDeclaration.getTypeName()+" has a different"
+                    + " supperclass that its previous definition: "+newDeclaration.getTypeClassDef().getSuperClass()
+                    +" != "+oldDeclaration.getTypeClassDef().getSuperClass());
+        }
+        
+        //Field comparisson
+        List<FactField> oldFields = oldDeclaration.getTypeClassDef().getFields();
+        Map<String, FactField> newFieldsMap = new HashMap<String, FactField>();
+        for (FactField factField : newDeclaration.getTypeClassDef().getFields()) {
+            newFieldsMap.put(factField.getName(), factField);
+        }
+        
+        //each of the fields in the old definition that are also present in the
+        //new definition must have the same type. If not -> Incompatible
+        boolean allFieldsInOldDeclarationAreStillPresent = true;
+        for (FactField oldFactField : oldFields) {
+            FactField newFactField = newFieldsMap.get(oldFactField.getName());
+            
+            if (newFactField != null){
+                //we can't use newFactField.getType() since it throws a NPE at this point.
+                String newFactType = ((FieldDefinition)newFactField).getTypeName();
+                
+                if (!newFactType.equals(oldFactField.getType().getCanonicalName())){
+                    throw new IncompatibleClassChangeError("Type Declaration "+newDeclaration.getTypeName()+"."+newFactField.getName()+" has a different"
+                        + " type that its previous definition: "+newFactType
+                        +" != "+oldFactField.getType().getCanonicalName());
+                }
+            }else{
+                allFieldsInOldDeclarationAreStillPresent = false;
+            }
+            
+        }
+        
+        
+        //If the old declaration has less fields than the new declaration, oldDefinition < newDefinition
+        if (oldFields.size() < newFieldsMap.size()){
+            return -1;
+        }
+        
+        //If the old declaration has more fields than the new declaration, oldDefinition > newDefinition
+        if (oldFields.size() > newFieldsMap.size()){
+            return 1;
+        }
+        
+        //If the old declaration has the same fields as the new declaration, 
+        //and all the fieds present in the old declaration are also present in 
+        //the new declaration, then they are considered "equal", otherwise
+        //they are incompatible
+        if (allFieldsInOldDeclarationAreStillPresent){
+            return 0;
+        }
+        
+        //Both declarations have the same number of fields, but not all the
+        //fields in the old declaration are present in the new declaration. 
+        throw new IncompatibleClassChangeError(newDeclaration.getTypeName()+" introduces"
+            + " fields that are not present in its previous version.");
+        
+    }
+    
+    /**
+     * Merges all the missing FactFields from oldDefinition into newDeclaration.
+     * @param oldDeclaration
+     * @param newDeclaration 
+     */
+    private void mergeTypeDeclarations(TypeDeclaration oldDeclaration, TypeDeclaration newDeclaration){
+        if (oldDeclaration == null){
+            return;
+        }
+
+        //add the missing fields (if any) to newDeclaration
+        for (FieldDefinition oldFactField : oldDeclaration.getTypeClassDef().getFieldsDefinitions()) {
+            FieldDefinition newFactField = newDeclaration.getTypeClassDef().getField(oldFactField.getName());
+            if ( newFactField == null){
+                newDeclaration.getTypeClassDef().addField(oldFactField);
             }
         }
     }
