@@ -23,6 +23,7 @@ public class TypeDeclarationWarning extends BaseKnowledgeBuilderResultImpl {
     private int[]  line;
 
     public TypeDeclarationWarning(final String message, final int line) {
+        super(null);
         this.message = message;
         this.line = new int[] { line };
     }

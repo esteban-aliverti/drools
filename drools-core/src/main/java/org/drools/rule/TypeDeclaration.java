@@ -108,10 +108,38 @@ public class TypeDeclaration
         }
     }
 
+    public static enum Nature {
+        /**
+         * A DECLARATION is a Type Declaration that does not contain any 
+         * field definition and that is just used to add meta-data to an
+         * DEFINITION.
+         * A DEFINITION of an exiting DEFINITION is also considered a DECLARATION
+         */
+        DECLARATION, 
+        /**
+         * A DEFINITION is:
+         *  1.- Type Declaration containing field definitions.
+         *  2.- A DECLARATION with no previous DEFINITION
+         */
+        DEFINITION;
+
+        public static final String ID = "nature";
+
+        public static Nature parseNature(String nature) {
+            if ( "declaration".equalsIgnoreCase( nature ) ) {
+                return DECLARATION;
+            } else if ( "definition".equalsIgnoreCase( nature ) ) {
+                return DEFINITION;
+            }
+            return null;
+        }
+    }
+
     private String                 typeName;
     private Role                   role;
     private Format                 format;
     private Kind                   kind;
+    private Nature                 nature;
     private String                 timestampAttribute;
     private String                 durationAttribute;
     private InternalReadAccessor   durationExtractor;
@@ -124,6 +152,7 @@ public class TypeDeclaration
     private boolean                dynamic;
     private boolean                typesafe;
     private boolean                novel;
+    private boolean                valid;
     private boolean propertySpecific;
     private transient List<String> settableProprties;
 
@@ -134,6 +163,7 @@ public class TypeDeclaration
         this.role = Role.FACT;
         this.format = Format.POJO;
         this.kind = Kind.CLASS;
+        this.valid =  true;
     }
 
     public TypeDeclaration(String typeName) {
@@ -145,6 +175,7 @@ public class TypeDeclaration
         this.timestampAttribute = null;
         this.typeTemplate = null;
         this.typesafe =  true;
+        this.valid =  true;
     }
 
     public void readExternal(ObjectInput in) throws IOException,
@@ -153,6 +184,7 @@ public class TypeDeclaration
         this.role = (Role) in.readObject();
         this.format = (Format) in.readObject();
         this.kind = (Kind) in.readObject();
+        this.nature = (Nature) in.readObject();
         this.durationAttribute = (String) in.readObject();
         this.timestampAttribute = (String) in.readObject();
         this.typeClassName = (String) in.readObject();
@@ -165,6 +197,7 @@ public class TypeDeclaration
         this.dynamic = in.readBoolean();
         this.typesafe = in.readBoolean();
         this.propertySpecific = in.readBoolean();
+        this.valid = in.readBoolean();
     }
 
     public void writeExternal(ObjectOutput out) throws IOException {
@@ -172,6 +205,7 @@ public class TypeDeclaration
         out.writeObject( role );
         out.writeObject( format );
         out.writeObject( kind );
+        out.writeObject( nature );
         out.writeObject( durationAttribute );
         out.writeObject( timestampAttribute );
         out.writeObject( typeClassName );
@@ -184,6 +218,7 @@ public class TypeDeclaration
         out.writeBoolean(dynamic);
         out.writeBoolean( typesafe );
         out.writeBoolean(propertySpecific);
+        out.writeBoolean(valid);
     }
 
     public int getSetMask() {
@@ -242,6 +277,14 @@ public class TypeDeclaration
         this.kind = kind;
     }
 
+    public Nature getNature() {
+        return nature;
+    }
+
+    public void setNature(Nature nature) {
+        this.nature = nature;
+    }
+    
     /**
      * @return the timestampAttribute
      */
@@ -270,6 +313,14 @@ public class TypeDeclaration
         this.durationAttribute = durationAttribute;
     }
 
+    public boolean isValid() {
+        return valid;
+    }
+
+    public void setValid(boolean valid) {
+        this.valid = valid;
+    }
+    
     /**
      * @return the typeClass
      */

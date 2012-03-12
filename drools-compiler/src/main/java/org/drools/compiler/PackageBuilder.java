@@ -2004,9 +2004,7 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
                                       type,
                                       pkgRegistry );
 
-
                 clazz = pkgRegistry.getTypeResolver().resolveType( typeDescr.getType().getFullName() );
-
                 type.setTypeClass( clazz );
 
 
@@ -2082,6 +2080,7 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
                 timeParser = new TimeIntervalParser();
             }
             type.setExpirationOffset( timeParser.parse( expiration )[0] );
+
         }
 
         boolean dynamic = typeDescr.getAnnotationNames().contains( TypeDeclaration.ATTR_PROP_CHANGE_SUPPORT );
@@ -2092,11 +2091,10 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
                 typeDescr.getAnnotationNames().contains(TypeDeclaration.ATTR_NOT_PROP_SPECIFIC));
         type.setPropertySpecific( propertySpecific );
 
-	//Merge the Type declaration with any pre-existing declaration
-        TypeDeclaration existingTypeDeclaration = pkgRegistry.getPackage().getTypeDeclaration(type.getTypeName());
-        this.mergeTypeDeclarations(existingTypeDeclaration, type);
-
+if (type.isValid()){
         pkgRegistry.getPackage().addTypeDeclaration( type );
+}
+        
         return true;
     }
 
@@ -2156,6 +2154,7 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
 //                                                                        "redefine the fields in the declare statement. Fields can only be defined for non-existing classes.",
 //                                                                typeDescr.getLine() ) );
 //                }
+
                 return false;
             } else {
                 return false;
@@ -2336,49 +2335,67 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
         //if is not new, search the already existing declaration and 
         //compare them o see if they are at least compatibles
         if (!type.isNovel()){
-            TypeDeclaration oldTypeDeclaration = this.pkgRegistryMap.get(typeDescr.getNamespace()).getPackage().getTypeDeclaration(typeDescr.getTypeName());
+            TypeDeclaration previousTypeDeclaration = this.pkgRegistryMap.get(typeDescr.getNamespace()).getPackage().getTypeDeclaration(typeDescr.getTypeName());
 
             try{
+                
+                if (type.getTypeClassDef().getFields().size() > 0 ){
+                    //since the declaration defines one or more fields, it is a DEFINITION
+                    type.setNature(TypeDeclaration.Nature.DEFINITION);
+                } else{
+                    //The declaration doesn't define any field, it is a DECLARATION
+                    type.setNature(TypeDeclaration.Nature.DECLARATION);
+                }
+                
                 //if there is no previous declaration, then the original declaration was a POJO
                 //TODO: what should we do in this case? In the meantime I'll fallback
                 //to the behavior previous these changes
-                if (oldTypeDeclaration == null){
+                if (previousTypeDeclaration == null){
                     //new declarations of a POJO can't declare new fields
                     if (type.getTypeClassDef().getFields().size() > 0 ){
-                        this.results.add(new TypeDeclarationError("New declaration of "+typeDescr.getType().getFullName()
-                                +" can't declare new fields", typeDescr.getLine()));
+                        type.setValid(false);
+                        this.results.add(new TypeDeclarationError(typeDescr, "New declaration of "+typeDescr.getType().getFullName()
+                                +" can't declare new fields"));
                     }
                 }else{
 
-
-                    int typeComparissonResult = this.compareTypeDeclaration(oldTypeDeclaration, type);
+                    int typeComparissonResult = this.compareTypeDeclarations(previousTypeDeclaration, type);
 
                     if (typeComparissonResult < 0){
                         //oldDeclaration is "less" than newDeclaration -> error
-                        this.results.add(new TypeDeclarationError(typeDescr.getType().getFullName()
-                                +" declares more fields than the already existing version", typeDescr.getLine()));
+                        this.results.add(new TypeDeclarationError(typeDescr, typeDescr.getType().getFullName()
+                                +" declares more fields than the already existing version"));
+                        type.setValid(false);
                     }else if (typeComparissonResult > 0 && !type.getTypeClassDef().getFields().isEmpty()){
-                        //oldDeclaration is "grater" than newDeclaration -> warning
-                        this.results.add(new TypeDeclarationWarning(typeDescr.getType().getFullName()
-                                +" declares less fields than the already existing version", typeDescr.getLine()));
+                        //oldDeclaration is "grater" than newDeclaration -> error
+                        this.results.add(new TypeDeclarationError(typeDescr, typeDescr.getType().getFullName()
+                                +" declares less fields than the already existing version"));
+                        type.setValid(false);
                     }
                     
                     //if they are "equal" -> no problem
+                    
+                    //in the case of a declaration, we need to copy all the 
+                    //fields present in the previous declaration
+                    if (type.getNature() == TypeDeclaration.Nature.DECLARATION){
+                        this.mergeTypeDeclarations(previousTypeDeclaration, type);
+                }
                 }
                 
             } catch (IncompatibleClassChangeError error){
                 //if the types are incompatible -> error
-                this.results.add(new TypeDeclarationError(error.getMessage(), typeDescr.getLine()));
+                this.results.add(new TypeDeclarationError(typeDescr, error.getMessage()));
             }
             
-            
+        } else{
+            //if the declaration is novel, then it is a DEFINITION
+            type.setNature(TypeDeclaration.Nature.DEFINITION);
         }
         
         generateDeclaredBean( typeDescr,
                               type,
                               pkgRegistry,
                               def );
-
     }
 
     private void generateDeclaredBean( AbstractClassTypeDeclarationDescr typeDescr,
@@ -3195,7 +3212,7 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
         }
     }
     
-    private int compareTypeDeclaration(TypeDeclaration oldDeclaration, TypeDeclaration newDeclaration) throws IncompatibleClassChangeError{
+    private int compareTypeDeclarations(TypeDeclaration oldDeclaration, TypeDeclaration newDeclaration) throws IncompatibleClassChangeError{
         
         //different formats -> incompatible
         if (!oldDeclaration.getFormat().equals(newDeclaration.getFormat())){
@@ -3203,14 +3220,28 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
                     + " format that its previous definition: "+newDeclaration.getFormat()+"!="+oldDeclaration.getFormat());
         }
         
-        //TODO: further comparisson?
-        
         //different superclasses -> Incompatible (TODO: check for hierarchy)
         if (!oldDeclaration.getTypeClassDef().getSuperClass().equals(newDeclaration.getTypeClassDef().getSuperClass())){
             throw new IncompatibleClassChangeError("Type Declaration "+newDeclaration.getTypeName()+" has a different"
                     + " supperclass that its previous definition: "+newDeclaration.getTypeClassDef().getSuperClass()
                     +" != "+oldDeclaration.getTypeClassDef().getSuperClass());
         }
+        
+        //different duration -> Incompatible
+        if (!this.nullSafeEqualityComparisson(oldDeclaration.getDurationAttribute(),newDeclaration.getDurationAttribute())){
+            throw new IncompatibleClassChangeError("Type Declaration "+newDeclaration.getTypeName()+" has a different"
+                    + " duration: "+newDeclaration.getDurationAttribute()
+                    +" != "+oldDeclaration.getDurationAttribute());
+        }
+
+        //different masks -> incompatible
+        if (oldDeclaration.getSetMask() != newDeclaration.getSetMask() ){
+            throw new IncompatibleClassChangeError("Type Declaration "+newDeclaration.getTypeName()+" is incompatible with"
+                    + " the previous definition: "+newDeclaration
+                    +" != "+oldDeclaration);
+        }
+        
+        //TODO: further comparisson?
         
         //Field comparisson
         List<FactField> oldFields = oldDeclaration.getTypeClassDef().getFields();
@@ -3264,6 +3295,7 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
         throw new IncompatibleClassChangeError(newDeclaration.getTypeName()+" introduces"
             + " fields that are not present in its previous version.");
         
+        
     }
     
     /**
@@ -3285,6 +3317,19 @@ public class PackageBuilder implements DeepCloneable<PackageBuilder> {
         }
     }
 
+    
+    private boolean nullSafeEqualityComparisson(Comparable c1, Comparable c2){
+        if (c1 == null && c2 == null){
+            return true;
+        }
+        
+        if (c1 != null){
+            return c1.compareTo(c2) == 0;
+        }
+        
+        return false;
+    }
+    
     static class TypeDefinition {
         private final AbstractClassTypeDeclarationDescr typeDescr;
         private final TypeDeclaration type;

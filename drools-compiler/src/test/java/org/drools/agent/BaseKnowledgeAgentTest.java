@@ -5,6 +5,7 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +37,8 @@ import org.junit.After;
 import org.junit.Before;
 import static org.junit.Assert.*;
 import org.drools.builder.KnowledgeBuilderConfiguration;
+import org.drools.builder.KnowledgeBuilderError;
+import org.drools.builder.KnowledgeBuilderErrors;
 
 public abstract class BaseKnowledgeAgentTest extends CommonTestMethodBase {
     
@@ -197,6 +200,14 @@ public abstract class BaseKnowledgeAgentTest extends CommonTestMethodBase {
         KnowledgeAgentEventListener l = new KnowledgeAgentEventListener() {
             
             public void resourceCompilationFailed(ResourceCompilationFailedEvent event) {
+                KnowledgeBuilderErrors errors = event.getKnowledgeBuilder().getErrors();
+                if (errors != null){
+                    Iterator<KnowledgeBuilderError> iterator = errors.iterator();
+                    while (iterator.hasNext()) {
+                        KnowledgeBuilderError knowledgeBuilderError = iterator.next();
+                        System.err.println(knowledgeBuilderError.getMessage());
+                    }
+                }
                 throw new RuntimeException("Unable to compile Knowledge"+ event );
             }
             
@@ -467,6 +478,37 @@ public abstract class BaseKnowledgeAgentTest extends CommonTestMethodBase {
       sb.append(valueToAdd);
       sb.append(" from \"+source);\n");
       sb.append("}\n");
+    
+      return sb.toString();
+    }
+    
+    public String createCommonDeclaration(String typeName, String[] annotations, String[] fields) {
+      StringBuilder sb = new StringBuilder();
+      
+      sb.append("package org.drools.test\n");
+      sb.append("global java.util.List list\n\n");
+      
+      sb.append("declare  ");
+      sb.append(typeName);
+      
+      if (annotations != null){
+          for (String annotation : annotations) {
+              sb.append("\n");
+              sb.append(annotation);
+          }
+      }
+      
+      sb.append("\n");
+      
+      if (fields != null){
+          for (String field : fields) {
+              sb.append("\n");
+              sb.append(field);
+          }
+      }
+      
+      sb.append("\n");
+      sb.append("end\n");
     
       return sb.toString();
     }

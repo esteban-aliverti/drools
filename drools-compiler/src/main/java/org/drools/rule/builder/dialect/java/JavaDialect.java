@@ -168,6 +168,8 @@ public class JavaDialect
                                                                  data );
             data.onAdd( this.pkg.getDialectRuntimeRegistry(),
                         this.packageBuilder.getRootClassLoader() );
+        }else{
+            data = (JavaDialectRuntimeData) pkg.getDialectRuntimeRegistry().getDialectData( ID );
         }
 
         this.packageStoreWrapper = new PackageStore( data,
