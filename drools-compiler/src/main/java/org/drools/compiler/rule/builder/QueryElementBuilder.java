@@ -310,9 +310,12 @@ public class QueryElementBuilder
             return;            
         }
         if ( isVariable( expression ) ) {
+            
+            String realExpression = expression.contains(".")? expression.split( "\\." )[0] : expression;
+            
             // is this already bound?
             Declaration declr = context.getDeclarationResolver().getDeclaration( query,
-                                                                                 expression );
+                                                                                 realExpression );
             if ( declr != null ) {
                 // it exists, so it's an input
                 arguments.set( position,

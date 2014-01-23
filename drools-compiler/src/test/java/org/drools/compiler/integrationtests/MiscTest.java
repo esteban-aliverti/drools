@@ -10106,6 +10106,95 @@ import static org.mockito.Mockito.verify;
 
          kbase.addKnowledgePackages(loadKnowledgePackagesFromString(rule2) );
      }
+     
+     
+    @Test
+    public void testQueryWithAccessorAsArgument() throws Exception {
+        // DROOLS-414
+        String str =
+                "import org.drools.compiler.Person\n" +
+                "global java.util.List persons;\n" +
+                "\n" +
+                "query contains(String $s, String $c)\n" +
+                "    $s := String( this.contains( $c ) )\n" +
+                "end\n" +
+                "\n" +
+                "rule R when\n" +
+                "    $p : Person()\n" +
+                "    contains( $p.name, \"a\"; )\n" +
+                "then\n" +
+                "    persons.add( $p );\n" +
+                "end\n";
+
+        KnowledgeBase kbase = loadKnowledgeBaseFromString(str);
+        StatefulKnowledgeSession ksession = kbase.newStatefulKnowledgeSession();
+
+        List<Person> personsWithA = new ArrayList<Person>();
+        ksession.setGlobal("persons", personsWithA);
+
+        ksession.insert("Mark");
+        ksession.insert("Edson");
+        ksession.insert("Mario");
+        ksession.insert(new Person("Mark"));
+        ksession.insert(new Person("Edson"));
+        ksession.insert(new Person("Mario"));
+        ksession.fireAllRules();
+
+        assertEquals(2, personsWithA.size());
+    }
+     
+     
+     @Test
+     public void testNestedAccessorAsQueryParameter() {
+        // DROOLS-414
+        String rule = "";
+
+        rule +="import java.util.List;\n";
+
+        rule +="global List globalList;\n";
+
+        rule +="declare Parent\n";
+        rule +="    id : String\n";
+        rule +="end\n";
+
+        rule +="declare Child\n";
+        rule +="    parentId : String\n";
+        rule +="end\n";
+
+        rule +="query getChildWithName( String $parentId, Child $child )\n";
+        rule +="    $child:= Child( parentId == $parentId )\n";
+        rule +="end\n";
+
+        rule +="rule \"Insert Children\"\n";
+        rule +="when\n";
+        rule +="then\n";
+        rule +="    Parent p1 = new Parent( \"a1\" );\n";
+        rule +="    Child c1p1 = new Child( \"1\" );\n";
+
+        rule +="    insert( c1p1 );\n";
+        rule +="    insert( p1 );\n";
+        rule +="end\n";
+
+        rule +="rule \"Rule A\"\n";
+        rule +="when\n";
+        rule +="    $p: Parent()\n";
+        rule +="    ?getChildWithName( $p.id, $child;)\n";
+        rule +="then\n";
+        rule +="    globalList.add($child);\n";
+        rule +="end\n";
+         
+         KnowledgeBase kbase = getKnowledgeBase();
+         StatefulKnowledgeSession knowledgeSession = kbase.newStatefulKnowledgeSession();
+
+         kbase.addKnowledgePackages(loadKnowledgePackagesFromString( rule ) );
+
+         List<String> globalList = new ArrayList<String>();
+         knowledgeSession.setGlobal("globalList", globalList);
+         
+         knowledgeSession.fireAllRules();
+         
+         Assert.assertTrue(globalList.isEmpty());
+     }
 
      public static class RuleTime {
          public Date getTime() {
